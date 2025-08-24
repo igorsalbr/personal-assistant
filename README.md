@@ -7,12 +7,11 @@
     git clone <repository-url>
     cd personal-assistant
     ```
-3. **Copy example configs**:
+3. **Copy environment config**:
     ```bash
     cp .env.example .env
-    cp tenants.example.yaml tenants.yaml
     ```
-4. **Edit `.env` and `tenants.yaml`** with your credentials (see below).
+4. **Edit `.env`** with your credentials (see below).
 5. **Install dependencies** (Go modules handle this automatically):
     ```bash
     go mod tidy
@@ -56,7 +55,7 @@ A production-ready WhatsApp bot built in Go that connects Large Language Models 
 ## 🚀 Features
 
 ### Core Capabilities
-- **Multi-Tenant Architecture**: Isolated databases and configurations per WhatsApp Business Account
+- **Multi-Tenant Architecture**: Unified database with Row-Level Security (RLS) for tenant isolation
 - **LLM Integration**: Support for OpenAI, DeepSeek, and extensible provider system
 - **RAG Memory System**: Persistent memory with vector similarity search using pgvector
 - **MCP-Style Tools**: Modular tool system for database operations and external API calls
@@ -66,8 +65,8 @@ A production-ready WhatsApp bot built in Go that connects Large Language Models 
 ### Advanced Features
 - **Vector Search**: pgvector for semantic similarity with SQL fallback
 - **Token Optimization**: Intelligent tool gating and context management
-- **Database per Tenant**: Complete isolation with per-tenant configurations
-- **Configurable LLM Providers**: Store provider configs in database, switch per tenant
+- **Unified Database Architecture**: Row-Level Security for secure multi-tenancy
+- **Database-Stored Configuration**: Tenant configurations stored in database with YAML fallback
 - **Observability**: Structured logging, token usage tracking, and request tracing
 - **Production Ready**: Docker support, migrations, health checks, graceful shutdown
 
@@ -86,7 +85,6 @@ A production-ready WhatsApp bot built in Go that connects Large Language Models 
 git clone <repository-url>
 cd whatsapp-llm-bot
 cp .env.example .env
-cp tenants.example.yaml tenants.yaml
 ```
 
 ### 2. Configure Environment Variables
@@ -102,8 +100,11 @@ LLM_API_KEY=your_openai_api_key_here
 # LLM_PROVIDER=deepseek
 # LLM_API_KEY=your_deepseek_api_key_here
 
-# Database
-DATABASE_URL_DEFAULT=postgres://user:password@localhost/whatsapp_bot?sslmode=disable
+# Unified Database
+DATABASE_URL_DEFAULT=postgres://user:password@localhost/whatsapp_bot_unified?sslmode=disable
+
+# Tenant Configuration Source (optional)
+TENANT_CONFIG_SOURCE=database  # or "yaml" for fallback mode
 
 # Infobip
 INFOBIP_API_KEY=your_infobip_api_key_here
@@ -119,27 +120,38 @@ WEBHOOK_VERIFY_TOKEN=your_secure_token_here
 -- Install pgvector extension
 CREATE EXTENSION vector;
 
--- Create your database
-CREATE DATABASE whatsapp_bot_tenant1;
+-- Create unified database
+CREATE DATABASE whatsapp_bot_unified;
 ```
 
 ### 4. Configure Tenants
 
-Edit `tenants.yaml`:
+The application now uses database-stored tenant configurations. After running the server for the first time, you can add tenants directly to the database:
 
-```yaml
-tenants:
-  - tenant_id: "my_business"
-    waba_number: "+1234567890"
-    db_dsn: "postgres://user:password@localhost/whatsapp_bot_tenant1?sslmode=disable"
-    embedding_model: "text-embedding-ada-002"
-    vector_store: "pgvector"
-    enabled_agents: ["db_agent", "http_agent", "orchestrator"]
-    config:
-      business_name: "My Business"
-      timezone: "America/New_York"
-      rag_enabled: true
+```sql
+-- Add a new tenant
+INSERT INTO tenants_config (
+    tenant_id, waba_number, embedding_model, vector_store,
+    enabled_agents, config, enabled
+) VALUES (
+    'my_business',
+    '+1234567890', 
+    'text-embedding-ada-002',
+    'pgvector',
+    '["db_agent", "http_agent", "orchestrator"]',
+    '{"business_name": "My Business", "timezone": "America/New_York", "rag_enabled": true}',
+    true
+);
+
+-- Configure LLM provider for the tenant
+INSERT INTO llm_providers (
+    tenant_id, provider, api_key, model_chat, model_embed
+) VALUES (
+    'my_business', 'openai', 'your_api_key', 'gpt-3.5-turbo', 'text-embedding-ada-002'
+);
 ```
+
+*Note: For backward compatibility, you can still use `tenants.yaml` by setting `TENANT_CONFIG_SOURCE=yaml` in your environment.*
 
 ### 5. Build and Run
 
@@ -147,7 +159,7 @@ tenants:
 # Install dependencies
 go mod tidy
 
-# Run database migrations (will be created automatically on first run)
+# Run database migrations and start server
 go run cmd/server/main.go
 ```
 
@@ -157,11 +169,12 @@ The server will start on port 8080 (configurable via `APP_PORT`).
 
 ### Tenant Configuration
 
-Each tenant represents a separate WhatsApp Business Account with isolated:
-- Database connection
-- LLM provider settings
-- Enabled agents/tools
-- Custom business logic
+Each tenant represents a separate WhatsApp Business Account with isolated data using Row-Level Security (RLS):
+- Secure data isolation within unified database
+- Database-stored LLM provider settings
+- Configurable enabled agents/tools
+- Custom business logic and metadata
+- Automatic tenant context management
 
 ### LLM Providers
 
@@ -246,11 +259,16 @@ WhatsApp → Infobip → Webhook → Tenant Manager → LLM + Tools → Response
 
 ### Database Schema
 
+**Tenant Configuration:**
+- `tenants_config`: Tenant settings and configuration (replaces tenants.yaml)
+- `system_config`: Global system settings
+
+**Tenant-Isolated Data (with RLS):**
 - `users`: WhatsApp users per tenant
 - `messages`: Conversation history
 - `memory_chunks`: RAG memory with vector embeddings
 - `llm_providers`: Per-tenant LLM configurations
-- `agents`: Available agents and their permissions
+- `external_services`: Per-tenant API integrations
 
 ## 🛠️ Development
 
