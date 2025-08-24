@@ -70,7 +70,7 @@ func main() {
 	})
 
 	// Initialize tenant manager
-	tenantManager, err := tenant.NewManager(cfg, logger)
+	tenantManager, err := tenant.NewTenantManager(cfg, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to initialize tenant manager")
 	}

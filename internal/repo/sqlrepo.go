@@ -755,3 +755,245 @@ func (r *PostgresRepository) UpdateLLMProvider(ctx context.Context, provider *do
 
 	return nil
 }
+
+// GetTenantsConfig retrieves all tenant configurations
+func (r *PostgresRepository) GetTenantsConfig(ctx context.Context) ([]domain.TenantConfig, error) {
+	query := `
+		SELECT id, tenant_id, waba_number, embedding_model, vector_store, 
+		       enabled_agents, config, metadata, enabled, created_at, updated_at
+		FROM tenants_config
+		WHERE enabled = true
+		ORDER BY tenant_id
+	`
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tenant configs: %w", err)
+	}
+	defer rows.Close()
+
+	var configs []domain.TenantConfig
+	for rows.Next() {
+		var config domain.TenantConfig
+		var configJSON, metadataJSON []byte
+
+		err := rows.Scan(
+			&config.ID, &config.TenantID, &config.WABANumber, &config.EmbeddingModel, &config.VectorStore,
+			&config.EnabledAgents, &configJSON, &metadataJSON, &config.Enabled,
+			&config.CreatedAt, &config.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan tenant config: %w", err)
+		}
+
+		if err := json.Unmarshal(configJSON, &config.Config); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+		}
+
+		if err := json.Unmarshal(metadataJSON, &config.Metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+
+		configs = append(configs, config)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate tenant configs: %w", err)
+	}
+
+	return configs, nil
+}
+
+// GetTenantConfig retrieves a specific tenant configuration by tenant ID
+func (r *PostgresRepository) GetTenantConfig(ctx context.Context, tenantID string) (*domain.TenantConfig, error) {
+	query := `
+		SELECT id, tenant_id, waba_number, embedding_model, vector_store,
+		       enabled_agents, config, metadata, enabled, created_at, updated_at
+		FROM tenants_config
+		WHERE tenant_id = $1
+	`
+
+	var config domain.TenantConfig
+	var configJSON, metadataJSON []byte
+
+	err := r.db.QueryRow(ctx, query, tenantID).Scan(
+		&config.ID, &config.TenantID, &config.WABANumber, &config.EmbeddingModel, &config.VectorStore,
+		&config.EnabledAgents, &configJSON, &metadataJSON, &config.Enabled,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get tenant config: %w", err)
+	}
+
+	if err := json.Unmarshal(configJSON, &config.Config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if err := json.Unmarshal(metadataJSON, &config.Metadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+
+	return &config, nil
+}
+
+// GetTenantConfigByWABA retrieves a tenant configuration by WABA number
+func (r *PostgresRepository) GetTenantConfigByWABA(ctx context.Context, wabaNumber string) (*domain.TenantConfig, error) {
+	query := `
+		SELECT id, tenant_id, waba_number, embedding_model, vector_store,
+		       enabled_agents, config, metadata, enabled, created_at, updated_at
+		FROM tenants_config
+		WHERE waba_number = $1 AND enabled = true
+	`
+
+	var config domain.TenantConfig
+	var configJSON, metadataJSON []byte
+
+	err := r.db.QueryRow(ctx, query, wabaNumber).Scan(
+		&config.ID, &config.TenantID, &config.WABANumber, &config.EmbeddingModel, &config.VectorStore,
+		&config.EnabledAgents, &configJSON, &metadataJSON, &config.Enabled,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get tenant config by WABA: %w", err)
+	}
+
+	if err := json.Unmarshal(configJSON, &config.Config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if err := json.Unmarshal(metadataJSON, &config.Metadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+
+	return &config, nil
+}
+
+// CreateTenantConfig creates a new tenant configuration
+func (r *PostgresRepository) CreateTenantConfig(ctx context.Context, config *domain.TenantConfig) error {
+	query := `
+		INSERT INTO tenants_config (id, tenant_id, waba_number, embedding_model, vector_store,
+		                           enabled_agents, config, metadata, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`
+
+	configJSON, err := json.Marshal(config.Config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	metadataJSON, err := json.Marshal(config.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	config.CreatedAt = time.Now().UTC()
+	config.UpdatedAt = config.CreatedAt
+
+	_, err = r.db.Exec(ctx, query,
+		config.ID, config.TenantID, config.WABANumber, config.EmbeddingModel, config.VectorStore,
+		config.EnabledAgents, configJSON, metadataJSON, config.Enabled,
+		config.CreatedAt, config.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create tenant config: %w", err)
+	}
+
+	r.logger.WithContext(ctx).Debug().
+		Str("tenant_id", config.TenantID).
+		Str("waba_number", config.WABANumber).
+		Msg("tenant config created")
+
+	return nil
+}
+
+// UpdateTenantConfig updates an existing tenant configuration
+func (r *PostgresRepository) UpdateTenantConfig(ctx context.Context, config *domain.TenantConfig) error {
+	query := `
+		UPDATE tenants_config 
+		SET waba_number = $1, embedding_model = $2, vector_store = $3,
+		    enabled_agents = $4, config = $5, metadata = $6, enabled = $7, updated_at = $8
+		WHERE tenant_id = $9
+	`
+
+	configJSON, err := json.Marshal(config.Config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	metadataJSON, err := json.Marshal(config.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	config.UpdatedAt = time.Now().UTC()
+	_, err = r.db.Exec(ctx, query,
+		config.WABANumber, config.EmbeddingModel, config.VectorStore,
+		config.EnabledAgents, configJSON, metadataJSON, config.Enabled, config.UpdatedAt,
+		config.TenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update tenant config: %w", err)
+	}
+
+	return nil
+}
+
+// GetSystemConfig retrieves a system configuration value
+func (r *PostgresRepository) GetSystemConfig(ctx context.Context, key string) (*domain.SystemConfig, error) {
+	query := `
+		SELECT id, key, value, description, created_at, updated_at
+		FROM system_config
+		WHERE key = $1
+	`
+
+	var config domain.SystemConfig
+	var valueJSON []byte
+
+	err := r.db.QueryRow(ctx, query, key).Scan(
+		&config.ID, &config.Key, &valueJSON, &config.Description,
+		&config.CreatedAt, &config.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get system config: %w", err)
+	}
+
+	if err := json.Unmarshal(valueJSON, &config.Value); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
+	}
+
+	return &config, nil
+}
+
+// SetSystemConfig creates or updates a system configuration
+func (r *PostgresRepository) SetSystemConfig(ctx context.Context, key string, value interface{}, description string) error {
+	valueJSON, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	query := `
+		INSERT INTO system_config (id, key, value, description, created_at, updated_at)
+		VALUES (uuid_generate_v4(), $1, $2, $3, NOW(), NOW())
+		ON CONFLICT (key)
+		DO UPDATE SET value = EXCLUDED.value, description = EXCLUDED.description, updated_at = NOW()
+	`
+
+	_, err = r.db.Exec(ctx, query, key, valueJSON, description)
+	if err != nil {
+		return fmt.Errorf("failed to set system config: %w", err)
+	}
+
+	return nil
+}

@@ -71,6 +71,17 @@ type Repository interface {
 	CreateLLMProvider(ctx context.Context, config *LLMProviderConfig) error
 	UpdateLLMProvider(ctx context.Context, config *LLMProviderConfig) error
 	
+	// Tenant configuration operations
+	GetTenantsConfig(ctx context.Context) ([]TenantConfig, error)
+	GetTenantConfig(ctx context.Context, tenantID string) (*TenantConfig, error)
+	GetTenantConfigByWABA(ctx context.Context, wabaNumber string) (*TenantConfig, error)
+	CreateTenantConfig(ctx context.Context, config *TenantConfig) error
+	UpdateTenantConfig(ctx context.Context, config *TenantConfig) error
+	
+	// System configuration operations
+	GetSystemConfig(ctx context.Context, key string) (*SystemConfig, error)
+	SetSystemConfig(ctx context.Context, key string, value interface{}, description string) error
+	
 	// Utility operations
 	Ping(ctx context.Context) error
 	Close() error
@@ -131,6 +142,9 @@ type TenantManager interface {
 	
 	// GetLLMProvider returns an LLM provider instance for the tenant
 	GetLLMProvider(tenantID string) (LLMProvider, error)
+	
+	// Close closes all tenant resources
+	Close() error
 }
 
 // InfobipClient defines the interface for Infobip API client
