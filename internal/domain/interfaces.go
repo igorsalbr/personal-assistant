@@ -82,6 +82,14 @@ type Repository interface {
 	GetSystemConfig(ctx context.Context, key string) (*SystemConfig, error)
 	SetSystemConfig(ctx context.Context, key string, value interface{}, description string) error
 	
+	// Allowed contacts operations
+	GetAllowedContacts(ctx context.Context, tenantID string) ([]AllowedContact, error)
+	GetAllowedContact(ctx context.Context, tenantID, phoneNumber string) (*AllowedContact, error)
+	CreateAllowedContact(ctx context.Context, contact *AllowedContact) error
+	UpdateAllowedContact(ctx context.Context, contact *AllowedContact) error
+	DeleteAllowedContact(ctx context.Context, tenantID string, contactID uuid.UUID) error
+	IsContactAllowed(ctx context.Context, tenantID, phoneNumber string) (bool, error)
+	
 	// Utility operations
 	Ping(ctx context.Context) error
 	Close() error

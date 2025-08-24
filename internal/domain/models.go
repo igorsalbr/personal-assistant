@@ -346,3 +346,16 @@ type ToolInvocationResult struct {
 	Result   interface{} `json:"result,omitempty"`
 	Error    string      `json:"error,omitempty"`
 }
+
+// AllowedContact represents a contact allowed to interact with a tenant's bot
+type AllowedContact struct {
+	ID          uuid.UUID `json:"id" db:"id"`
+	TenantID    string    `json:"tenant_id" db:"tenant_id"`
+	PhoneNumber string    `json:"phone_number" db:"phone_number"`
+	ContactName string    `json:"contact_name" db:"contact_name"`
+	Permissions []string  `json:"permissions" db:"permissions"`
+	Notes       string    `json:"notes" db:"notes"`
+	Enabled     bool      `json:"enabled" db:"enabled"`
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"personal-assistant/internal/config"
+	"personal-assistant/internal/http/contacts"
 	"personal-assistant/internal/http/infobip"
 	infobipClient "personal-assistant/internal/infobip"
 	"personal-assistant/internal/log"
@@ -88,6 +89,9 @@ func main() {
 	// Initialize webhook handler
 	webhookHandler := infobip.NewWebhookHandler(messageProcessor, cfg, logger)
 
+	// Initialize contacts handler
+	contactsHandler := contacts.NewContactsHandler(tenantManager, logger)
+
 	// Health check endpoint
 	e.GET("/health", healthCheck)
 
@@ -95,6 +99,15 @@ func main() {
 	e.POST("/webhooks/infobip", webhookHandler.HandleIncoming)
 	e.POST("/webhooks/infobip/status", webhookHandler.HandleStatus)
 	e.GET("/webhooks/infobip/health", webhookHandler.HandleHealth)
+
+	// Contacts management API endpoints
+	api := e.Group("/api/v1")
+	api.GET("/tenants/:tenant_id/contacts", contactsHandler.ListContacts)
+	api.GET("/tenants/:tenant_id/contacts/:phone_number", contactsHandler.GetContact)
+	api.POST("/tenants/:tenant_id/contacts", contactsHandler.CreateContact)
+	api.PUT("/tenants/:tenant_id/contacts/:phone_number", contactsHandler.UpdateContact)
+	api.DELETE("/tenants/:tenant_id/contacts/:contact_id", contactsHandler.DeleteContact)
+	api.GET("/tenants/:tenant_id/contacts/check", contactsHandler.CheckContact)
 
 	// Start server in a goroutine
 	go func() {

@@ -74,11 +74,34 @@ func (p *MessageProcessor) processWebhookResult(ctx context.Context, result *dom
 		return fmt.Errorf("failed to get tenant for WABA number %s: %w", result.To, err)
 	}
 
-	// Get or create user
+	// Get repository for sender validation and processing
 	repo, err := p.tenantManager.GetRepository(tenant.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get repository for tenant %s: %w", tenant.ID, err)
 	}
+
+	// Validate sender is allowed to contact this tenant
+	isAllowed, err := repo.IsContactAllowed(ctx, tenant.ID, result.From)
+	if err != nil {
+		p.logger.WithContext(ctx).Error().
+			Err(err).
+			Str("tenant_id", tenant.ID).
+			Str("sender", result.From).
+			Msg("failed to check if contact is allowed")
+		return fmt.Errorf("failed to validate sender: %w", err)
+	}
+
+	if !isAllowed {
+		p.logger.WithContext(ctx).Warn().
+			Str("tenant_id", tenant.ID).
+			Str("sender", result.From).
+			Str("waba_number", result.To).
+			Str("message", result.Message.Text.Text).
+			Msg("unauthorized sender attempted to contact bot - message ignored")
+		return nil // Silently ignore unauthorized senders
+	}
+
+	// Get or create user
 
 	user, err := p.getOrCreateUser(ctx, repo, tenant.ID, result.From, result.Contact.Name)
 	if err != nil {
