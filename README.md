@@ -1,3 +1,54 @@
+
+## 🏁 Getting Started (For Go Beginners)
+
+1. **Install Go**: Download and install Go from [golang.org/dl](https://golang.org/dl/).
+2. **Clone the repository**:
+    ```bash
+    git clone <repository-url>
+    cd personal-assistant
+    ```
+3. **Copy example configs**:
+    ```bash
+    cp .env.example .env
+    cp tenants.example.yaml tenants.yaml
+    ```
+4. **Edit `.env` and `tenants.yaml`** with your credentials (see below).
+5. **Install dependencies** (Go modules handle this automatically):
+    ```bash
+    go mod tidy
+    ```
+6. **Run the server**:
+    ```bash
+    go run cmd/server/main.go
+    ```
+7. **Run tests**:
+    ```bash
+    go test ./...
+    ```
+
+All commands should be run from the project root directory.
+
+### 📂 Project Structure Overview
+
+| Folder/File         | Purpose                                                        |
+|---------------------|----------------------------------------------------------------|
+| `cmd/server/`       | Main entrypoint for the server                                 |
+| `internal/agents/`  | Agent and orchestrator logic                                   |
+| `internal/config/`  | Configuration management                                       |
+| `internal/domain/`  | Core interfaces and models                                     |
+| `internal/http/`    | HTTP clients and webhook handlers                              |
+| `internal/llm/`     | LLM provider integrations                                     |
+| `internal/log/`     | Logging utilities                                              |
+| `internal/processor/`| Message processing pipeline                                   |
+| `internal/rag/`     | RAG pipeline and vector store logic                           |
+| `internal/repo/`    | Database repository logic                                      |
+| `internal/tenant/`  | Tenant manager and multi-tenancy logic                        |
+| `internal/tools/`   | MCP-style tool implementations                                |
+| `deployments/`      | Deployment configs (Docker, etc.)                             |
+| `migrations/`       | Database migration scripts                                     |
+| `tests/`            | Integration and unit tests                                     |
+| `README.md`         | Project documentation                                         |
+
 # WhatsApp LLM Bot with Multi-Tenant Architecture
 
 A production-ready WhatsApp bot built in Go that connects Large Language Models (OpenAI, DeepSeek) to WhatsApp via Infobip, featuring multi-tenancy, RAG (Retrieval-Augmented Generation), and MCP-style tools architecture.
