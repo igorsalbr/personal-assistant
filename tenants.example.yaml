@@ -1,0 +1,86 @@
+tenants:
+  # Example tenant configuration for a business
+  - tenant_id: "business_main"
+    waba_number: "+1234567890"
+    db_dsn: "postgres://user:password@localhost/whatsapp_bot_business?sslmode=disable"
+    embedding_model: "text-embedding-ada-002"
+    vector_store: "pgvector"
+    enabled_agents:
+      - "db_agent"
+      - "http_agent" 
+      - "orchestrator"
+    config:
+      business_name: "Acme Corp"
+      timezone: "America/New_York"
+      language: "en"
+      max_context_length: 2000
+      rag_enabled: true
+      rag_top_k: 5
+      rag_min_score: 0.7
+    metadata:
+      industry: "technology"
+      region: "north_america"
+      
+  # Example tenant for personal use
+  - tenant_id: "personal_assistant" 
+    waba_number: "+1987654321"
+    db_dsn: "postgres://user:password@localhost/whatsapp_bot_personal?sslmode=disable"
+    embedding_model: "text-embedding-ada-002"
+    vector_store: "pgvector"
+    enabled_agents:
+      - "db_agent"
+      - "orchestrator"
+    config:
+      owner_name: "John Doe"
+      timezone: "America/Los_Angeles"
+      language: "en"
+      max_context_length: 1500
+      rag_enabled: true
+      rag_top_k: 3
+      rag_min_score: 0.8
+    metadata:
+      type: "personal"
+      region: "west_coast"
+      
+  # Example tenant with SQL fallback (no pgvector)
+  - tenant_id: "fallback_demo"
+    waba_number: "+1555123456"
+    db_dsn: "postgres://user:password@localhost/whatsapp_bot_fallback?sslmode=disable"
+    embedding_model: ""  # No embedding model for fallback
+    vector_store: "sql_fallback"
+    enabled_agents:
+      - "db_agent"
+      - "http_agent"
+      - "orchestrator"
+    config:
+      business_name: "Demo Company"
+      timezone: "UTC"
+      language: "en"
+      max_context_length: 1000
+      rag_enabled: false  # Disabled for fallback mode
+    metadata:
+      mode: "fallback"
+      note: "Uses SQL text search instead of vector search"
+
+  # Example tenant with DeepSeek LLM
+  - tenant_id: "deepseek_demo"
+    waba_number: "+1555789012"
+    db_dsn: "postgres://user:password@localhost/whatsapp_bot_deepseek?sslmode=disable"
+    embedding_model: "text-embedding-v1"
+    vector_store: "pgvector"
+    enabled_agents:
+      - "db_agent"
+      - "http_agent"
+      - "orchestrator"
+    config:
+      business_name: "DeepSeek Demo"
+      timezone: "Asia/Shanghai"
+      language: "en"
+      max_context_length: 2000
+      rag_enabled: true
+      rag_top_k: 5
+      rag_min_score: 0.7
+      llm_provider: "deepseek"  # Will use DeepSeek instead of OpenAI
+    metadata:
+      llm_provider: "deepseek"
+      region: "asia"
