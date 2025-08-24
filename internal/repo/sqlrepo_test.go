@@ -158,9 +158,40 @@ func (m *MockRepository) GetSystemConfig(ctx context.Context, key string) (*doma
 	return args.Get(0).(*domain.SystemConfig), args.Error(1)
 }
 
-func (m *MockRepository) SetSystemConfig(ctx context.Context, key string, value interface{}, description string) error {
+func (m *MockRepository) SetSystemConfig(ctx context.Context, key string, value any, description string) error {
 	args := m.Called(ctx, key, value, description)
 	return args.Error(0)
+}
+
+// Allowed contacts operations
+func (m *MockRepository) GetAllowedContacts(ctx context.Context, tenantID string) ([]domain.AllowedContact, error) {
+	args := m.Called(ctx, tenantID)
+	return args.Get(0).([]domain.AllowedContact), args.Error(1)
+}
+
+func (m *MockRepository) GetAllowedContact(ctx context.Context, tenantID, phoneNumber string) (*domain.AllowedContact, error) {
+	args := m.Called(ctx, tenantID, phoneNumber)
+	return args.Get(0).(*domain.AllowedContact), args.Error(1)
+}
+
+func (m *MockRepository) CreateAllowedContact(ctx context.Context, contact *domain.AllowedContact) error {
+	args := m.Called(ctx, contact)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateAllowedContact(ctx context.Context, contact *domain.AllowedContact) error {
+	args := m.Called(ctx, contact)
+	return args.Error(0)
+}
+
+func (m *MockRepository) DeleteAllowedContact(ctx context.Context, tenantID string, contactID uuid.UUID) error {
+	args := m.Called(ctx, tenantID, contactID)
+	return args.Error(0)
+}
+
+func (m *MockRepository) IsContactAllowed(ctx context.Context, tenantID, phoneNumber string) (bool, error) {
+	args := m.Called(ctx, tenantID, phoneNumber)
+	return args.Bool(0), args.Error(1)
 }
 
 // Test Repository Interface Compliance
@@ -180,7 +211,7 @@ func TestUserOperations(t *testing.T) {
 			ID:       uuid.New(),
 			TenantID: "test-tenant",
 			Phone:    "+1234567890",
-			Profile:  map[string]interface{}{"name": "John"},
+			Profile:  map[string]any{"name": "John"},
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -310,6 +341,130 @@ func TestAgentOperations(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "test-agent", agent.Name)
 		assert.True(t, agent.Enabled)
+		mockRepo.AssertExpectations(t)
+	})
+}
+
+// Test Allowed Contacts Operations
+func TestAllowedContactsOperations(t *testing.T) {
+	ctx := context.Background()
+	mockRepo := new(MockRepository)
+
+	t.Run("create allowed contact", func(t *testing.T) {
+		contact := &domain.AllowedContact{
+			ID:          uuid.New(),
+			TenantID:    "test-tenant",
+			PhoneNumber: "+1234567890",
+			ContactName: "John Doe",
+			Permissions: []string{"chat", "schedule"},
+			Notes:       "Test user",
+			Enabled:     true,
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+
+		mockRepo.On("CreateAllowedContact", ctx, contact).Return(nil)
+
+		err := mockRepo.CreateAllowedContact(ctx, contact)
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("get allowed contacts", func(t *testing.T) {
+		expectedContacts := []domain.AllowedContact{
+			{
+				ID:          uuid.New(),
+				TenantID:    "test-tenant",
+				PhoneNumber: "+1234567890",
+				ContactName: "John Doe",
+				Permissions: []string{"chat", "schedule"},
+				Enabled:     true,
+			},
+			{
+				ID:          uuid.New(),
+				TenantID:    "test-tenant",
+				PhoneNumber: "+0987654321",
+				ContactName: "Jane Smith",
+				Permissions: []string{"chat"},
+				Enabled:     true,
+			},
+		}
+
+		mockRepo.On("GetAllowedContacts", ctx, "test-tenant").Return(expectedContacts, nil)
+
+		contacts, err := mockRepo.GetAllowedContacts(ctx, "test-tenant")
+		assert.NoError(t, err)
+		assert.Len(t, contacts, 2)
+		assert.Equal(t, "+1234567890", contacts[0].PhoneNumber)
+		assert.Equal(t, "John Doe", contacts[0].ContactName)
+		assert.Contains(t, contacts[0].Permissions, "chat")
+		assert.Contains(t, contacts[0].Permissions, "schedule")
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("get allowed contact by phone", func(t *testing.T) {
+		expectedContact := &domain.AllowedContact{
+			ID:          uuid.New(),
+			TenantID:    "test-tenant",
+			PhoneNumber: "+1234567890",
+			ContactName: "John Doe",
+			Permissions: []string{"chat", "schedule", "admin"},
+			Enabled:     true,
+		}
+
+		mockRepo.On("GetAllowedContact", ctx, "test-tenant", "+1234567890").Return(expectedContact, nil)
+
+		contact, err := mockRepo.GetAllowedContact(ctx, "test-tenant", "+1234567890")
+		assert.NoError(t, err)
+		assert.Equal(t, "+1234567890", contact.PhoneNumber)
+		assert.Equal(t, "John Doe", contact.ContactName)
+		assert.Contains(t, contact.Permissions, "admin")
+		assert.True(t, contact.Enabled)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("is contact allowed", func(t *testing.T) {
+		// Test allowed contact
+		mockRepo.On("IsContactAllowed", ctx, "test-tenant", "+1234567890").Return(true, nil)
+
+		isAllowed, err := mockRepo.IsContactAllowed(ctx, "test-tenant", "+1234567890")
+		assert.NoError(t, err)
+		assert.True(t, isAllowed)
+
+		// Test unauthorized contact
+		mockRepo.On("IsContactAllowed", ctx, "test-tenant", "+9999999999").Return(false, nil)
+
+		isAllowed, err = mockRepo.IsContactAllowed(ctx, "test-tenant", "+9999999999")
+		assert.NoError(t, err)
+		assert.False(t, isAllowed)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("update allowed contact", func(t *testing.T) {
+		contact := &domain.AllowedContact{
+			ID:          uuid.New(),
+			TenantID:    "test-tenant",
+			PhoneNumber: "+1234567890",
+			ContactName: "John Smith", // Updated name
+			Permissions: []string{"chat", "schedule", "admin"}, // Updated permissions
+			Enabled:     true,
+			UpdatedAt:   time.Now(),
+		}
+
+		mockRepo.On("UpdateAllowedContact", ctx, contact).Return(nil)
+
+		err := mockRepo.UpdateAllowedContact(ctx, contact)
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("delete allowed contact", func(t *testing.T) {
+		contactID := uuid.New()
+		mockRepo.On("DeleteAllowedContact", ctx, "test-tenant", contactID).Return(nil)
+
+		err := mockRepo.DeleteAllowedContact(ctx, "test-tenant", contactID)
+		assert.NoError(t, err)
 		mockRepo.AssertExpectations(t)
 	})
 }

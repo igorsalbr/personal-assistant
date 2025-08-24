@@ -196,8 +196,51 @@ func (r *TenantRepository) GetSystemConfig(ctx context.Context, key string) (*do
 	return r.repo.GetSystemConfig(ctx, key)
 }
 
-func (r *TenantRepository) SetSystemConfig(ctx context.Context, key string, value interface{}, description string) error {
+func (r *TenantRepository) SetSystemConfig(ctx context.Context, key string, value any, description string) error {
 	return r.repo.SetSystemConfig(ctx, key, value, description)
+}
+
+// Allowed contacts operations
+func (r *TenantRepository) GetAllowedContacts(ctx context.Context, tenantID string) ([]domain.AllowedContact, error) {
+	if err := r.setTenantContext(ctx); err != nil {
+		return nil, err
+	}
+	return r.repo.GetAllowedContacts(ctx, tenantID)
+}
+
+func (r *TenantRepository) GetAllowedContact(ctx context.Context, tenantID, phoneNumber string) (*domain.AllowedContact, error) {
+	if err := r.setTenantContext(ctx); err != nil {
+		return nil, err
+	}
+	return r.repo.GetAllowedContact(ctx, tenantID, phoneNumber)
+}
+
+func (r *TenantRepository) CreateAllowedContact(ctx context.Context, contact *domain.AllowedContact) error {
+	if err := r.setTenantContext(ctx); err != nil {
+		return err
+	}
+	return r.repo.CreateAllowedContact(ctx, contact)
+}
+
+func (r *TenantRepository) UpdateAllowedContact(ctx context.Context, contact *domain.AllowedContact) error {
+	if err := r.setTenantContext(ctx); err != nil {
+		return err
+	}
+	return r.repo.UpdateAllowedContact(ctx, contact)
+}
+
+func (r *TenantRepository) DeleteAllowedContact(ctx context.Context, tenantID string, contactID uuid.UUID) error {
+	if err := r.setTenantContext(ctx); err != nil {
+		return err
+	}
+	return r.repo.DeleteAllowedContact(ctx, tenantID, contactID)
+}
+
+func (r *TenantRepository) IsContactAllowed(ctx context.Context, tenantID, phoneNumber string) (bool, error) {
+	if err := r.setTenantContext(ctx); err != nil {
+		return false, err
+	}
+	return r.repo.IsContactAllowed(ctx, tenantID, phoneNumber)
 }
 
 // Utility operations

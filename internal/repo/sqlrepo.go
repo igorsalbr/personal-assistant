@@ -997,3 +997,155 @@ func (r *PostgresRepository) SetSystemConfig(ctx context.Context, key string, va
 
 	return nil
 }
+
+// GetAllowedContacts retrieves all allowed contacts for a tenant
+func (r *PostgresRepository) GetAllowedContacts(ctx context.Context, tenantID string) ([]domain.AllowedContact, error) {
+	query := `
+		SELECT id, tenant_id, phone_number, contact_name, permissions, notes, enabled, created_at, updated_at
+		FROM allowed_contacts
+		WHERE tenant_id = $1
+		ORDER BY contact_name, phone_number
+	`
+
+	rows, err := r.db.Query(ctx, query, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query allowed contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []domain.AllowedContact
+	for rows.Next() {
+		var contact domain.AllowedContact
+		err := rows.Scan(
+			&contact.ID, &contact.TenantID, &contact.PhoneNumber, &contact.ContactName,
+			&contact.Permissions, &contact.Notes, &contact.Enabled,
+			&contact.CreatedAt, &contact.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan allowed contact: %w", err)
+		}
+		contacts = append(contacts, contact)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate allowed contacts: %w", err)
+	}
+
+	return contacts, nil
+}
+
+// GetAllowedContact retrieves a specific allowed contact
+func (r *PostgresRepository) GetAllowedContact(ctx context.Context, tenantID, phoneNumber string) (*domain.AllowedContact, error) {
+	query := `
+		SELECT id, tenant_id, phone_number, contact_name, permissions, notes, enabled, created_at, updated_at
+		FROM allowed_contacts
+		WHERE tenant_id = $1 AND phone_number = $2
+	`
+
+	var contact domain.AllowedContact
+	err := r.db.QueryRow(ctx, query, tenantID, phoneNumber).Scan(
+		&contact.ID, &contact.TenantID, &contact.PhoneNumber, &contact.ContactName,
+		&contact.Permissions, &contact.Notes, &contact.Enabled,
+		&contact.CreatedAt, &contact.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get allowed contact: %w", err)
+	}
+
+	return &contact, nil
+}
+
+// CreateAllowedContact creates a new allowed contact
+func (r *PostgresRepository) CreateAllowedContact(ctx context.Context, contact *domain.AllowedContact) error {
+	query := `
+		INSERT INTO allowed_contacts (id, tenant_id, phone_number, contact_name, permissions, notes, enabled, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`
+
+	contact.CreatedAt = time.Now().UTC()
+	contact.UpdatedAt = contact.CreatedAt
+
+	_, err := r.db.Exec(ctx, query,
+		contact.ID, contact.TenantID, contact.PhoneNumber, contact.ContactName,
+		contact.Permissions, contact.Notes, contact.Enabled,
+		contact.CreatedAt, contact.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create allowed contact: %w", err)
+	}
+
+	r.logger.WithContext(ctx).Debug().
+		Str("contact_id", contact.ID.String()).
+		Str("tenant_id", contact.TenantID).
+		Str("phone_number", contact.PhoneNumber).
+		Str("contact_name", contact.ContactName).
+		Msg("allowed contact created")
+
+	return nil
+}
+
+// UpdateAllowedContact updates an existing allowed contact
+func (r *PostgresRepository) UpdateAllowedContact(ctx context.Context, contact *domain.AllowedContact) error {
+	query := `
+		UPDATE allowed_contacts
+		SET contact_name = $1, permissions = $2, notes = $3, enabled = $4, updated_at = $5
+		WHERE tenant_id = $6 AND id = $7
+	`
+
+	contact.UpdatedAt = time.Now().UTC()
+	_, err := r.db.Exec(ctx, query,
+		contact.ContactName, contact.Permissions, contact.Notes, contact.Enabled, contact.UpdatedAt,
+		contact.TenantID, contact.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update allowed contact: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteAllowedContact deletes an allowed contact
+func (r *PostgresRepository) DeleteAllowedContact(ctx context.Context, tenantID string, contactID uuid.UUID) error {
+	query := `
+		DELETE FROM allowed_contacts
+		WHERE tenant_id = $1 AND id = $2
+	`
+
+	result, err := r.db.Exec(ctx, query, tenantID, contactID)
+	if err != nil {
+		return fmt.Errorf("failed to delete allowed contact: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("allowed contact not found")
+	}
+
+	r.logger.WithContext(ctx).Debug().
+		Str("contact_id", contactID.String()).
+		Str("tenant_id", tenantID).
+		Msg("allowed contact deleted")
+
+	return nil
+}
+
+// IsContactAllowed checks if a phone number is allowed for a tenant
+func (r *PostgresRepository) IsContactAllowed(ctx context.Context, tenantID, phoneNumber string) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM allowed_contacts
+			WHERE tenant_id = $1 AND phone_number = $2 AND enabled = true
+		)
+	`
+
+	var exists bool
+	err := r.db.QueryRow(ctx, query, tenantID, phoneNumber).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if contact is allowed: %w", err)
+	}
+
+	return exists, nil
+}
