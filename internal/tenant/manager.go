@@ -33,8 +33,8 @@ type Manager struct {
 	mutex sync.RWMutex
 }
 
-// NewManager creates a new tenant manager
-func NewManager(cfg *config.Config, logger *log.Logger) (*Manager, error) {
+// newYAMLManager creates a new YAML-based tenant manager
+func newYAMLManager(cfg *config.Config, logger *log.Logger) (*Manager, error) {
 	// Load tenant configurations
 	tenantsConfig, err := cfg.LoadTenants()
 	if err != nil {

@@ -126,6 +126,43 @@ func (m *MockRepository) Close() error {
 	return args.Error(0)
 }
 
+// Tenant configuration operations
+func (m *MockRepository) GetTenantsConfig(ctx context.Context) ([]domain.TenantConfig, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]domain.TenantConfig), args.Error(1)
+}
+
+func (m *MockRepository) GetTenantConfig(ctx context.Context, tenantID string) (*domain.TenantConfig, error) {
+	args := m.Called(ctx, tenantID)
+	return args.Get(0).(*domain.TenantConfig), args.Error(1)
+}
+
+func (m *MockRepository) GetTenantConfigByWABA(ctx context.Context, wabaNumber string) (*domain.TenantConfig, error) {
+	args := m.Called(ctx, wabaNumber)
+	return args.Get(0).(*domain.TenantConfig), args.Error(1)
+}
+
+func (m *MockRepository) CreateTenantConfig(ctx context.Context, config *domain.TenantConfig) error {
+	args := m.Called(ctx, config)
+	return args.Error(0)
+}
+
+func (m *MockRepository) UpdateTenantConfig(ctx context.Context, config *domain.TenantConfig) error {
+	args := m.Called(ctx, config)
+	return args.Error(0)
+}
+
+// System configuration operations
+func (m *MockRepository) GetSystemConfig(ctx context.Context, key string) (*domain.SystemConfig, error) {
+	args := m.Called(ctx, key)
+	return args.Get(0).(*domain.SystemConfig), args.Error(1)
+}
+
+func (m *MockRepository) SetSystemConfig(ctx context.Context, key string, value interface{}, description string) error {
+	args := m.Called(ctx, key, value, description)
+	return args.Error(0)
+}
+
 // Test Repository Interface Compliance
 func TestRepositoryInterface(t *testing.T) {
 	t.Run("mock repository implements interface", func(t *testing.T) {

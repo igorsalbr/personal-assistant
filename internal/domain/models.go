@@ -300,6 +300,31 @@ type Tenant struct {
 	Metadata       map[string]string `json:"metadata"`
 }
 
+// TenantConfig represents a tenant configuration stored in database
+type TenantConfig struct {
+	ID             uuid.UUID         `json:"id" db:"id"`
+	TenantID       string            `json:"tenant_id" db:"tenant_id"`
+	WABANumber     string            `json:"waba_number" db:"waba_number"`
+	EmbeddingModel string            `json:"embedding_model" db:"embedding_model"`
+	VectorStore    string            `json:"vector_store" db:"vector_store"`
+	EnabledAgents  []string          `json:"enabled_agents" db:"enabled_agents"`
+	Config         map[string]any    `json:"config" db:"config"`
+	Metadata       map[string]any    `json:"metadata" db:"metadata"`
+	Enabled        bool              `json:"enabled" db:"enabled"`
+	CreatedAt      time.Time         `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at" db:"updated_at"`
+}
+
+// SystemConfig represents a system configuration key-value pair
+type SystemConfig struct {
+	ID          uuid.UUID   `json:"id" db:"id"`
+	Key         string      `json:"key" db:"key"`
+	Value       interface{} `json:"value" db:"value"`
+	Description string      `json:"description" db:"description"`
+	CreatedAt   time.Time   `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at" db:"updated_at"`
+}
+
 // SearchFilter represents filters for memory search
 type SearchFilter struct {
 	Kinds []string          `json:"kinds,omitempty"`
