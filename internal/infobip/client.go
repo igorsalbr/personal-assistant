@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"personal-assistant/internal/config"
@@ -43,22 +44,22 @@ func (c *Client) SendText(ctx context.Context, from, to, text string, messageIDR
 			Text: text,
 		},
 	}
-	
+
 	// Set callback data if message ID reference provided
 	if len(messageIDRef) > 0 && messageIDRef[0] != "" {
 		message.CallbackData = messageIDRef[0]
 	}
-	
+
 	return c.SendMessage(ctx, message)
 }
 
 // SendMessage sends a structured message
 func (c *Client) SendMessage(ctx context.Context, message *domain.InfobipMessage) (*domain.InfobipMessage, error) {
 	start := time.Now()
-	
+
 	// Prepare request
 	url := fmt.Sprintf("%s/whatsapp/1/message/text", c.baseURL)
-	
+
 	// Create request body
 	requestBody := map[string]interface{}{
 		"from": message.From,
@@ -67,33 +68,33 @@ func (c *Client) SendMessage(ctx context.Context, message *domain.InfobipMessage
 			"text": message.Content.Text,
 		},
 	}
-	
+
 	if message.CallbackData != "" {
 		requestBody["callbackData"] = message.CallbackData
 	}
-	
+
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
-	
+
 	c.logger.WithContext(ctx).Debug().
 		Str("from", message.From).
 		Str("to", message.To).
 		Str("text", log.SanitizeText(message.Content.Text)).
 		Msg("sending WhatsApp message")
-	
+
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
-	
+
 	// Set headers
 	req.Header.Set("Authorization", fmt.Sprintf("App %s", c.apiKey))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	
+
 	// Make the request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -104,15 +105,15 @@ func (c *Client) SendMessage(ctx context.Context, message *domain.InfobipMessage
 		return nil, fmt.Errorf("Infobip API request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// Read response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	
+
 	c.logger.LogAPICall("infobip", "POST", url, resp.StatusCode, time.Since(start))
-	
+
 	// Check for HTTP errors
 	if resp.StatusCode >= 400 {
 		c.logger.WithContext(ctx).Error().
@@ -121,21 +122,21 @@ func (c *Client) SendMessage(ctx context.Context, message *domain.InfobipMessage
 			Msg("Infobip API error response")
 		return nil, fmt.Errorf("Infobip API error: %d - %s", resp.StatusCode, string(bodyBytes))
 	}
-	
+
 	// Parse response
 	var response InfobipSendResponse
 	if err := json.Unmarshal(bodyBytes, &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-	
+
 	// Check if we have messages in the response
 	if len(response.Messages) == 0 {
 		return nil, fmt.Errorf("no messages in Infobip response")
 	}
-	
+
 	// Get the first message result
 	msgResult := response.Messages[0]
-	
+
 	// Create response message
 	responseMsg := &domain.InfobipMessage{
 		From:      message.From,
@@ -143,13 +144,13 @@ func (c *Client) SendMessage(ctx context.Context, message *domain.InfobipMessage
 		MessageID: msgResult.MessageID,
 		Content:   message.Content,
 	}
-	
+
 	c.logger.WithContext(ctx).Debug().
 		Str("message_id", msgResult.MessageID).
 		Str("status", msgResult.Status.Name).
 		Dur("duration", time.Since(start)).
 		Msg("WhatsApp message sent successfully")
-	
+
 	return responseMsg, nil
 }
 
@@ -160,9 +161,9 @@ type InfobipSendResponse struct {
 
 // InfobipMessageResult represents a single message result
 type InfobipMessageResult struct {
-	To        string                 `json:"to"`
-	MessageID string                 `json:"messageId"`
-	Status    InfobipMessageStatus   `json:"status"`
+	To        string               `json:"to"`
+	MessageID string               `json:"messageId"`
+	Status    InfobipMessageStatus `json:"status"`
 }
 
 // InfobipMessageStatus represents the status of a message
@@ -195,7 +196,7 @@ func NewRetryableClient(cfg *config.InfobipConfig, logger *log.Logger, maxRetrie
 // SendText sends a text message with retry logic
 func (rc *RetryableClient) SendText(ctx context.Context, from, to, text string, messageIDRef ...string) (*domain.InfobipMessage, error) {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= rc.maxRetries; attempt++ {
 		if attempt > 0 {
 			// Exponential backoff
@@ -205,7 +206,7 @@ func (rc *RetryableClient) SendText(ctx context.Context, from, to, text string, 
 				Dur("delay", delay).
 				Err(lastErr).
 				Msg("retrying Infobip request after delay")
-			
+
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -213,7 +214,7 @@ func (rc *RetryableClient) SendText(ctx context.Context, from, to, text string, 
 				// Continue with retry
 			}
 		}
-		
+
 		result, err := rc.client.SendText(ctx, from, to, text, messageIDRef...)
 		if err == nil {
 			if attempt > 0 {
@@ -223,20 +224,20 @@ func (rc *RetryableClient) SendText(ctx context.Context, from, to, text string, 
 			}
 			return result, nil
 		}
-		
+
 		lastErr = err
-		
+
 		// Check if error is retryable
 		if !rc.isRetryableError(err) {
 			break
 		}
 	}
-	
+
 	rc.logger.WithContext(ctx).Error().
 		Int("max_retries", rc.maxRetries).
 		Err(lastErr).
 		Msg("Infobip request failed after all retries")
-	
+
 	return nil, fmt.Errorf("failed after %d retries: %w", rc.maxRetries, lastErr)
 }
 
@@ -252,10 +253,14 @@ func (rc *RetryableClient) isRetryableError(err error) bool {
 	if err == context.Canceled || err == context.DeadlineExceeded {
 		return false
 	}
-	
+	// rmv err no messages in Infobip response
+	if err != nil && strings.Contains(err.Error(), "no messages") {
+		return false
+	}
+
 	// Could also check for specific HTTP status codes
 	// e.g., don't retry on 4xx errors except 429 (rate limit)
-	
+
 	return true
 }
 

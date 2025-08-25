@@ -4,6 +4,132 @@
 
 Implementação de uma arquitetura de banco unificado com isolamento por tenant usando Row-Level Security (RLS) do PostgreSQL.
 
+
+1. memory_chunks - Core RAG Memory System
+
+  Purpose: Stores user memories with vector embeddings for
+  semantic search
+  - id: UUID primary key
+  - tenant_id: Multi-tenant isolation
+  - user_id: References users table
+  - kind: Type of memory ('note', 'event', 'task', 'msg')
+  - text: The actual memory content
+  - embedding: Vector embeddings (1536 dimensions for OpenAI
+  ada-002)
+  - metadata: JSONB for additional context
+  - text_search: Auto-generated tsvector for full-text search
+  fallback
+
+  Usage:
+  - Stores conversation history, user preferences, events, tasks
+  - Enables semantic search using pgvector for retrieving relevant
+   context
+  - Has both vector similarity search and text search fallback
+  - Used by pgvector.go:48-114 for upserting memories and
+  pgvector.go:117-224 for similarity search
+
+  2. users - User Management
+
+  Purpose: Tracks WhatsApp users per tenant
+  - id: UUID primary key
+  - tenant_id: Tenant isolation
+  - phone: WhatsApp phone number
+  - profile: JSONB for user preferences/data
+  - created_at/updated_at: Timestamps
+
+  Usage: Maps WhatsApp phone numbers to internal user IDs for
+  memory association
+
+  3. messages - Conversation History
+
+  Purpose: Stores all WhatsApp message exchanges
+  - id: UUID primary key
+  - tenant_id: Tenant isolation
+  - user_id: Links to users table
+  - message_id: External message ID from WhatsApp/Infobip
+  - direction: 'inbound' or 'outbound'
+  - text: Message content
+  - timestamp: Message timestamp
+  - token_usage: JSONB tracking LLM API usage
+  - metadata: JSONB for additional context
+
+  Usage: Full conversation history, token tracking, audit trail
+
+  4. tenants_config - Multi-Tenant Configuration
+
+  Purpose: Database-stored tenant configurations (replaces YAML
+  files)
+  - tenant_id: Unique tenant identifier
+  - waba_number: WhatsApp Business number
+  - embedding_model: Which embedding model to use
+  - vector_store: 'pgvector' or 'sql_fallback'
+  - enabled_agents: Array of enabled agent names
+  - config: JSONB tenant-specific settings
+  - enabled: Active status
+
+  Usage: Manages different WhatsApp business accounts with
+  isolated configurations
+
+  5. system_config - Global Settings
+
+  Purpose: System-wide configuration key-value store
+  - key: Setting name (e.g., 'default_embedding_model')
+  - value: JSONB setting value
+  - description: Human-readable description
+
+  Usage: Global defaults, feature flags, system-wide settings
+
+  6. llm_providers - LLM Configuration per Tenant
+
+  Purpose: Per-tenant LLM provider settings
+  - tenant_id: Tenant isolation
+  - provider: 'openai', 'deepseek', 'anthropic', 'mock'
+  - name: Provider instance name
+  - api_key: Encrypted API key
+  - model_chat/model_embed: Model names
+  - is_default: Default provider for tenant
+  - config: JSONB provider-specific settings
+
+  Usage: Allows different tenants to use different LLM providers
+  and models
+
+  7. agents - System Agent Registry
+
+  Purpose: Available system agents and their configurations
+  - name: Agent identifier ('db_agent', 'http_agent',
+  'orchestrator')
+  - version: Agent version
+  - allowed_tenants: Array of tenant IDs that can use this agent
+  - config: JSONB agent configuration
+  - enabled: Active status
+
+  Usage: Manages which agents are available and their permissions
+
+  8. external_services - API Integration Configuration
+
+  Purpose: Per-tenant external API configurations
+  - tenant_id: Tenant isolation
+  - name: Service name
+  - base_url: API endpoint
+  - auth: JSONB authentication config
+  - config: JSONB service-specific settings
+
+  Usage: Allows tenants to configure external APIs (weather,
+  calendar, etc.)
+
+  9. allowed_contacts - Security Access Control
+
+  Purpose: WhatsApp contact whitelist per tenant
+  - tenant_id: Tenant isolation
+  - phone_number: Allowed WhatsApp number
+  - contact_name: Display name
+  - permissions: Array of allowed actions ('chat', 'schedule',
+  'admin')
+  - notes: Additional context
+
+  Usage: Controls which WhatsApp numbers can interact with each
+  tenant's bot
+
 ## Estrutura do Banco Único
 
 ### Schema Principal
@@ -129,5 +255,3 @@ repo, err := manager.GetRepository("tenant_123")
 users, err := repo.GetMessages(ctx, "tenant_123", userID, 10)
 // ^^ Only returns messages for tenant_123
 ```
-
-A arquitetura resolve completamente o "exagero" dos múltiplos DBs mantendo isolamento perfeito! 🚀
