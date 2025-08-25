@@ -41,7 +41,7 @@ CREATE POLICY allowed_contacts_tenant_isolation ON allowed_contacts
 -- This assumes you have a tenant with tenant_id 'demo_tenant'
 INSERT INTO allowed_contacts (tenant_id, phone_number, contact_name, permissions, notes) VALUES 
 (
-    'demo_tenant', 
+    'test_tenant_001', 
     '+1234567890', 
     'Demo User', 
     ARRAY['chat', 'schedule', 'admin']::TEXT[], 
