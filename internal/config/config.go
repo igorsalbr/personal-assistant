@@ -47,7 +47,7 @@ type Config struct {
 
 // LLMConfig holds LLM provider configuration
 type LLMConfig struct {
-	Provider   string `envconfig:"LLM_PROVIDER" default:"openai"` // openai, anthropic, mock
+	Provider   string `envconfig:"LLM_PROVIDER" default:"openai"` // openai, anthropic, bedrock, mock
 	APIKey     string `envconfig:"LLM_API_KEY" required:"true"`
 	ModelChat  string `envconfig:"LLM_MODEL_CHAT" default:"gpt-3.5-turbo"`
 	ModelEmbed string `envconfig:"LLM_MODEL_EMBED" default:"text-embedding-ada-002"`

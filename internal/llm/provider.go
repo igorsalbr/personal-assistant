@@ -18,6 +18,8 @@ const (
 	DeepSeek ProviderType = "deepseek"
 	// Anthropic provider
 	Anthropic ProviderType = "anthropic"
+	// Bedrock provider
+	Bedrock ProviderType = "bedrock"
 	// Mock provider for testing
 	Mock ProviderType = "mock"
 )
@@ -43,6 +45,8 @@ func (f *Factory) CreateProvider(config *domain.LLMProviderConfig) (domain.LLMPr
 		return openai.NewProvider(config, f.logger)
 	case DeepSeek:
 		return NewDeepSeekProvider(config, f.logger)
+	case Bedrock:
+		return NewBedrockProvider(config, f.logger)
 	case Mock:
 		return NewMockProvider(config, f.logger)
 	default:
@@ -59,6 +63,8 @@ func GetProviderType(s string) ProviderType {
 		return DeepSeek
 	case "anthropic":
 		return Anthropic
+	case "bedrock":
+		return Bedrock
 	case "mock":
 		return Mock
 	default:
@@ -133,6 +139,8 @@ func GetDefaultModels(providerType ProviderType) (chatModel, embedModel string) 
 		return "deepseek-chat", "text-embedding-v1"
 	case Anthropic:
 		return "claude-3-sonnet-20240229", ""
+	case Bedrock:
+		return "anthropic.claude-3-sonnet-20240229-v1:0", "amazon.titan-embed-text-v1"
 	case Mock:
 		return "mock-chat", "mock-embed"
 	default:
@@ -149,6 +157,8 @@ func GetDefaultBaseURL(providerType ProviderType) string {
 		return "https://api.deepseek.com/v1"
 	case Anthropic:
 		return "https://api.anthropic.com"
+	case Bedrock:
+		return "https://bedrock-runtime.us-east-1.amazonaws.com"
 	case Mock:
 		return "http://localhost:8080/mock"
 	default:
