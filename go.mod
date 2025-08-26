@@ -3,6 +3,8 @@ module personal-assistant
 go 1.22
 
 require (
+	github.com/aws/aws-sdk-go-v2/config v1.31.3
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.37.1
 	github.com/google/uuid v1.5.0
 	github.com/jackc/pgx/v5 v5.5.1
 	github.com/kelseyhightower/envconfig v1.4.0

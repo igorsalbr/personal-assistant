@@ -158,7 +158,7 @@ func GetDefaultBaseURL(providerType ProviderType) string {
 	case Anthropic:
 		return "https://api.anthropic.com"
 	case Bedrock:
-		return "https://bedrock-runtime.us-east-1.amazonaws.com"
+		return "" // Uses AWS SDK, no base URL needed
 	case Mock:
 		return "http://localhost:8080/mock"
 	default:
