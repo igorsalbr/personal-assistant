@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -14,7 +13,6 @@ import (
 	"personal-assistant/internal/log"
 )
 
-// BedrockProvider implements the LLMProvider interface for AWS Bedrock
 type BedrockProvider struct {
 	client     *bedrockruntime.Client
 	config     *domain.LLMProviderConfig
@@ -23,23 +21,17 @@ type BedrockProvider struct {
 	embedModel string
 }
 
-// NewBedrockProvider creates a new AWS Bedrock provider
 func NewBedrockProvider(config *domain.LLMProviderConfig, logger *log.Logger) (*BedrockProvider, error) {
-	// Load AWS config with default credentials chain
-	cfg, err := awsconfig.LoadDefaultConfig(context.TODO(),
-		awsconfig.WithRegion("us-west-2"), // Default region, can be overridden by AWS_REGION env var
-	)
+	cfg, err := awsconfig.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Create Bedrock runtime client
 	client := bedrockruntime.NewFromConfig(cfg)
 
-	// Use configured models or defaults
 	chatModel := config.ModelChat
 	if chatModel == "" {
-		chatModel = "openai.gpt-oss-120b-1:0"
+		chatModel = "anthropic.claude-3-sonnet-20240229-v1:0"
 	}
 
 	embedModel := config.ModelEmbed
@@ -56,151 +48,84 @@ func NewBedrockProvider(config *domain.LLMProviderConfig, logger *log.Logger) (*
 	}, nil
 }
 
-// Name returns the provider name
 func (p *BedrockProvider) Name() string {
-	return fmt.Sprintf("bedrock-%s", p.config.Name)
+	return "bedrock"
 }
 
-// Chat performs a chat completion using AWS Bedrock
 func (p *BedrockProvider) Chat(ctx context.Context, req *domain.ChatCompletionRequest) (*domain.ChatCompletionResponse, error) {
-	start := time.Now()
-
-	p.logger.WithContext(ctx).Debug().
-		Str("model", p.chatModel).
-		Int("messages", len(req.Messages)).
-		Int("max_tokens", req.MaxTokens).
-		Msg("making AWS Bedrock chat completion request")
-
-	// Convert domain request to Bedrock format
-	body, err := p.convertChatRequestToBedrock(req)
+	body, err := p.buildClaudeRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert chat request: %w", err)
+		return nil, err
 	}
 
-	// Make the on-demand request
 	result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
 		ModelId:     aws.String(p.chatModel),
 		Body:        body,
 		ContentType: aws.String("application/json"),
-		Accept:      aws.String("application/json"),
 	})
 	if err != nil {
-		p.logger.WithContext(ctx).Error().
-			Err(err).
-			Dur("duration", time.Since(start)).
-			Msg("AWS Bedrock chat completion failed")
-		return nil, fmt.Errorf("AWS Bedrock chat completion failed: %w", err)
+		return nil, fmt.Errorf("bedrock invoke failed: %w", err)
 	}
 
-	// Convert response
-	domainResp, err := p.convertBedrockChatResponse(result.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert Bedrock response: %w", err)
-	}
-
-	p.logger.WithContext(ctx).Debug().
-		Dur("duration", time.Since(start)).
-		Msg("AWS Bedrock chat completion successful")
-
-	return domainResp, nil
+	return p.parseClaudeResponse(result.Body)
 }
 
-// Embed generates embeddings using AWS Bedrock
 func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	if len(texts) == 0 {
-		return [][]float32{}, nil
-	}
+	var embeddings [][]float32
 
-	start := time.Now()
-
-	p.logger.WithContext(ctx).Debug().
-		Str("model", p.embedModel).
-		Int("texts", len(texts)).
-		Msg("making AWS Bedrock embedding request")
-
-	var allEmbeddings [][]float32
-
-	// Process texts individually for Titan embed model
 	for _, text := range texts {
-		body, err := json.Marshal(map[string]interface{}{
-			"inputText": text,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal embedding request: %w", err)
-		}
+		body, _ := json.Marshal(map[string]string{"inputText": text})
 
 		result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
 			ModelId:     aws.String(p.embedModel),
 			Body:        body,
 			ContentType: aws.String("application/json"),
-			Accept:      aws.String("application/json"),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("AWS Bedrock embedding failed: %w", err)
+			return nil, err
 		}
 
-		var response struct {
+		var resp struct {
 			Embedding []float32 `json:"embedding"`
 		}
-
-		if err := json.Unmarshal(result.Body, &response); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal embedding response: %w", err)
-		}
-
-		allEmbeddings = append(allEmbeddings, response.Embedding)
+		json.Unmarshal(result.Body, &resp)
+		embeddings = append(embeddings, resp.Embedding)
 	}
 
-	p.logger.WithContext(ctx).Debug().
-		Dur("duration", time.Since(start)).
-		Int("embeddings", len(allEmbeddings)).
-		Msg("AWS Bedrock embedding successful")
-
-	return allEmbeddings, nil
+	return embeddings, nil
 }
 
-// convertChatRequestToBedrock converts domain request to Bedrock Claude format
-func (p *BedrockProvider) convertChatRequestToBedrock(req *domain.ChatCompletionRequest) ([]byte, error) {
-	// Convert messages to Claude format
-	messages := make([]map[string]interface{}, 0, len(req.Messages))
+func (p *BedrockProvider) buildClaudeRequest(req *domain.ChatCompletionRequest) ([]byte, error) {
+	messages := []map[string]string{}
+	var system string
 
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			// Skip system messages for now, or handle them specially
-			continue
+			system = msg.Content
+		} else {
+			messages = append(messages, map[string]string{
+				"role":    msg.Role,
+				"content": msg.Content,
+			})
 		}
-
-		bedrockMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-
-		messages = append(messages, bedrockMsg)
 	}
 
-	// Build request body for Claude
 	body := map[string]interface{}{
 		"messages":          messages,
 		"max_tokens":        req.MaxTokens,
-		"temperature":       req.Temperature,
 		"anthropic_version": "bedrock-2023-05-31",
 	}
 
-	// Add system message if present
-	for _, msg := range req.Messages {
-		if msg.Role == "system" {
-			body["system"] = msg.Content
-			break
-		}
+	if system != "" {
+		body["system"] = system
 	}
 
 	return json.Marshal(body)
 }
 
-// convertBedrockChatResponse converts Bedrock response to domain response
-func (p *BedrockProvider) convertBedrockChatResponse(body []byte) (*domain.ChatCompletionResponse, error) {
-	var response struct {
+func (p *BedrockProvider) parseClaudeResponse(body []byte) (*domain.ChatCompletionResponse, error) {
+	var resp struct {
 		Content []struct {
-			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
 		Usage struct {
@@ -209,34 +134,26 @@ func (p *BedrockProvider) convertBedrockChatResponse(body []byte) (*domain.ChatC
 		} `json:"usage"`
 	}
 
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal Bedrock response: %w", err)
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
 	}
 
-	// Extract text content
-	var content string
-	for _, c := range response.Content {
-		if c.Type == "text" {
-			content = c.Text
-			break
-		}
+	content := ""
+	if len(resp.Content) > 0 {
+		content = resp.Content[0].Text
 	}
 
 	return &domain.ChatCompletionResponse{
-		Choices: []domain.Choice{
-			{
-				Index: 0,
-				Message: &domain.ChatMessage{
-					Role:    "assistant",
-					Content: content,
-				},
-				FinishReason: "stop",
+		Choices: []domain.Choice{{
+			Message: &domain.ChatMessage{
+				Role:    "assistant",
+				Content: content,
 			},
-		},
+		}},
 		Usage: &domain.TokenUsage{
-			PromptTokens:     response.Usage.InputTokens,
-			CompletionTokens: response.Usage.OutputTokens,
-			TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
+			PromptTokens:     resp.Usage.InputTokens,
+			CompletionTokens: resp.Usage.OutputTokens,
+			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
 		},
 	}, nil
 }
