@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -22,13 +23,16 @@ type BedrockProvider struct {
 }
 
 func NewBedrockProvider(config *domain.LLMProviderConfig, logger *log.Logger) (*BedrockProvider, error) {
-	if config.APIKey == "" {
-		return nil, fmt.Errorf("LLM_API_KEY is required")
+	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
+	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required")
 	}
 
 	cfg := aws.Config{
-		Region:      "us-east-1",
-		Credentials: credentials.NewStaticCredentialsProvider(config.APIKey, "", ""),
+		Region:      "us-west-2",
+		Credentials: credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 	}
 
 	client := bedrockruntime.NewFromConfig(cfg)
