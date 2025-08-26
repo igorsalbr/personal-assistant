@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 
 	"personal-assistant/internal/domain"
@@ -22,21 +22,25 @@ type BedrockProvider struct {
 }
 
 func NewBedrockProvider(config *domain.LLMProviderConfig, logger *log.Logger) (*BedrockProvider, error) {
-	cfg, err := awsconfig.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	if config.APIKey == "" {
+		return nil, fmt.Errorf("LLM_API_KEY is required")
+	}
+
+	cfg := aws.Config{
+		Region:      "us-east-1",
+		Credentials: credentials.NewStaticCredentialsProvider(config.APIKey, "", ""),
 	}
 
 	client := bedrockruntime.NewFromConfig(cfg)
 
 	chatModel := config.ModelChat
 	if chatModel == "" {
-		chatModel = "anthropic.claude-3-sonnet-20240229-v1:0"
+		chatModel = "openai.gpt-oss-120b-1:0"
 	}
 
 	embedModel := config.ModelEmbed
 	if embedModel == "" {
-		embedModel = "amazon.titan-embed-text-v1"
+		embedModel = "amazon.titan-embed-text-v2:0"
 	}
 
 	return &BedrockProvider{

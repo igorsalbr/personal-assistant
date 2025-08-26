@@ -140,7 +140,7 @@ func GetDefaultModels(providerType ProviderType) (chatModel, embedModel string) 
 	case Anthropic:
 		return "claude-3-sonnet-20240229", ""
 	case Bedrock:
-		return "anthropic.claude-3-sonnet-20240229-v1:0", "amazon.titan-embed-text-v1"
+		return "openai.gpt-oss-120b-1:0", "amazon.titan-embed-text-v2:0"
 	case Mock:
 		return "mock-chat", "mock-embed"
 	default:
