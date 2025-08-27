@@ -76,7 +76,7 @@ func (p *DeepSeekProvider) Chat(ctx context.Context, req *domain.ChatCompletionR
 	start := time.Now()
 
 	// Convert domain request to OpenAI-compatible request
-	openaiReq := p.convertChatRequest(req)
+	openaiReq := p.convertChatRequest(req) // aqui
 
 	p.logger.WithContext(ctx).Debug().
 		Str("model", openaiReq.Model).

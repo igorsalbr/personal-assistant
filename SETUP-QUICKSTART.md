@@ -202,22 +202,22 @@ curl "http://localhost:8080/api/v1/tenants/test_tenant_001/contacts/check?phone_
 ```bash
 curl -X POST http://localhost:8080/webhooks/infobip \
   -H "Content-Type: application/json" \
-  -H "X-Hub-Signature: your_webhook_verify_token_here" \
+  -H "X-Hub-Signature: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456" \
   -d '{
     "results": [{
-      "messageId": "test-msg-123",
-      "from": "+1987654321",
-      "to": "+1234567890",
+      "messageId": "test-msg-1",
+      "from": "+5512949524077",
+      "to": "+447860088970",
       "integrationType": "WHATSAPP",
       "receivedAt": "2024-01-01T12:00:00Z",
       "message": {
         "type": "TEXT",
         "text": {
-          "text": "Hello bot, what time is it?"
+          "text": "Quais sao as 5 menores cidades do Brasil"
         }
       },
       "contact": {
-        "name": "Test User"
+        "name": "baias"
       }
     }]
   }'
@@ -299,3 +299,28 @@ TRUNCATE messages, users, allowed_contacts, llm_providers, tenants_config RESTAR
 - Your personal number (sends messages): `+1987654321`
 
 The bot will only respond to messages FROM `+1987654321` TO `+1234567890`.
+
+
+
+
+curl -X POST http://localhost:8080/webhooks/infobip \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456" \
+  -d '{
+    "results": [{
+      "messageId": "3te4r34sterrt-msg-1",
+      "from": "5511949524077", 
+      "to": "447860088970",
+      "integrationType": "WHATSAPP",
+      "receivedAt": "2024-01-01T12:00:00Z",
+      "message": {
+        "type": "TEXT",
+        "text": {
+          "text": "Quais sao as 5 menores cidades do Brasil"
+        }
+      },
+      "contact": {
+        "name": "baias"
+      }
+    }]
+  }'
