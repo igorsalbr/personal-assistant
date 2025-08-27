@@ -4,17 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
 
 	"personal-assistant/internal/domain"
 	"personal-assistant/internal/log"
 )
 
 type BedrockProvider struct {
-	client     *bedrockruntime.Client
+	client     *bedrock.Client
 	config     *domain.LLMProviderConfig
 	logger     *log.Logger
 	chatModel  string
@@ -22,16 +24,19 @@ type BedrockProvider struct {
 }
 
 func NewBedrockProvider(config *domain.LLMProviderConfig, logger *log.Logger) (*BedrockProvider, error) {
-	if config.APIKey == "" {
-		return nil, fmt.Errorf("LLM_API_KEY is required")
+	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
+	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required")
 	}
 
 	cfg := aws.Config{
-		Region:      "us-east-1",
-		Credentials: credentials.NewStaticCredentialsProvider(config.APIKey, "", ""),
+		Region:      "us-west-2",
+		Credentials: credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 	}
 
-	client := bedrockruntime.NewFromConfig(cfg)
+	client := bedrock.NewFromConfig(cfg)
 
 	chatModel := config.ModelChat
 	if chatModel == "" {
@@ -57,21 +62,27 @@ func (p *BedrockProvider) Name() string {
 }
 
 func (p *BedrockProvider) Chat(ctx context.Context, req *domain.ChatCompletionRequest) (*domain.ChatCompletionResponse, error) {
-	body, err := p.buildClaudeRequest(req)
-	if err != nil {
-		return nil, err
+	system, messages := p.buildConverseRequest(req)
+
+	input := &bedrock.ConverseInput{
+		ModelId: aws.String(p.chatModel),
+		Messages: messages,
+		InferenceConfig: &types.InferenceConfiguration{
+			MaxTokens:   aws.Int32(int32(req.MaxTokens)),
+			Temperature: aws.Float32(req.Temperature),
+		},
 	}
 
-	result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-		ModelId:     aws.String(p.chatModel),
-		Body:        body,
-		ContentType: aws.String("application/json"),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("bedrock invoke failed: %w", err)
+	if len(system) > 0 {
+		input.System = system
 	}
 
-	return p.parseClaudeResponse(result.Body)
+	result, err := p.client.Converse(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock converse failed: %w", err)
+	}
+
+	return p.parseConverseResponse(result)
 }
 
 func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
@@ -80,10 +91,9 @@ func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float3
 	for _, text := range texts {
 		body, _ := json.Marshal(map[string]string{"inputText": text})
 
-		result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-			ModelId:     aws.String(p.embedModel),
-			Body:        body,
-			ContentType: aws.String("application/json"),
+		result, err := p.client.InvokeModel(ctx, &bedrock.InvokeModelInput{
+			ModelId: aws.String(p.embedModel),
+			Body:    body,
 		})
 		if err != nil {
 			return nil, err
@@ -99,52 +109,52 @@ func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float3
 	return embeddings, nil
 }
 
-func (p *BedrockProvider) buildClaudeRequest(req *domain.ChatCompletionRequest) ([]byte, error) {
-	messages := []map[string]string{}
-	var system string
+func (p *BedrockProvider) buildConverseRequest(req *domain.ChatCompletionRequest) ([]types.SystemContentBlock, []types.Message) {
+	var system []types.SystemContentBlock
+	var messages []types.Message
 
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			system = msg.Content
+			system = append(system, &types.SystemContentBlockMemberText{
+				Value: msg.Content,
+			})
 		} else {
-			messages = append(messages, map[string]string{
-				"role":    msg.Role,
-				"content": msg.Content,
+			role := types.ConversationRoleUser
+			if msg.Role == "assistant" {
+				role = types.ConversationRoleAssistant
+			}
+
+			messages = append(messages, types.Message{
+				Role: role,
+				Content: []types.ContentBlock{
+					&types.ContentBlockMemberText{
+						Value: msg.Content,
+					},
+				},
 			})
 		}
 	}
 
-	body := map[string]interface{}{
-		"messages":          messages,
-		"max_tokens":        req.MaxTokens,
-		"anthropic_version": "bedrock-2023-05-31",
-	}
-
-	if system != "" {
-		body["system"] = system
-	}
-
-	return json.Marshal(body)
+	return system, messages
 }
 
-func (p *BedrockProvider) parseClaudeResponse(body []byte) (*domain.ChatCompletionResponse, error) {
-	var resp struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-		} `json:"usage"`
-	}
-
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-
+func (p *BedrockProvider) parseConverseResponse(result *bedrock.ConverseOutput) (*domain.ChatCompletionResponse, error) {
 	content := ""
-	if len(resp.Content) > 0 {
-		content = resp.Content[0].Text
+	if result.Output != nil {
+		if msg := result.Output.(*types.ConverseOutputMemberMessage); msg != nil {
+			if len(msg.Value.Content) > 0 {
+				if textBlock := msg.Value.Content[0].(*types.ContentBlockMemberText); textBlock != nil {
+					content = textBlock.Value
+				}
+			}
+		}
+	}
+
+	usage := &domain.TokenUsage{}
+	if result.Usage != nil {
+		usage.PromptTokens = int(aws.ToInt32(result.Usage.InputTokens))
+		usage.CompletionTokens = int(aws.ToInt32(result.Usage.OutputTokens))
+		usage.TotalTokens = int(aws.ToInt32(result.Usage.TotalTokens))
 	}
 
 	return &domain.ChatCompletionResponse{
@@ -154,10 +164,6 @@ func (p *BedrockProvider) parseClaudeResponse(body []byte) (*domain.ChatCompleti
 				Content: content,
 			},
 		}},
-		Usage: &domain.TokenUsage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
-		},
+		Usage: usage,
 	}, nil
 }
