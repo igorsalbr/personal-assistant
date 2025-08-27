@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -144,7 +145,7 @@ func (p *BedrockProvider) parseConverseResponse(result *bedrock.ConverseOutput) 
 		if msg := result.Output.(*types.ConverseOutputMemberMessage); msg != nil {
 			if len(msg.Value.Content) > 0 {
 				if textBlock := msg.Value.Content[0].(*types.ContentBlockMemberText); textBlock != nil {
-					content = textBlock.Value
+					content = p.extractFinalAnswer(textBlock.Value)
 				}
 			}
 		}
@@ -166,4 +167,13 @@ func (p *BedrockProvider) parseConverseResponse(result *bedrock.ConverseOutput) 
 		}},
 		Usage: usage,
 	}, nil
+}
+
+func (p *BedrockProvider) extractFinalAnswer(content string) string {
+	// Remove <reasoning>...</reasoning> blocks
+	reasoningRegex := regexp.MustCompile(`(?s)<reasoning>.*?</reasoning>`)
+	cleaned := reasoningRegex.ReplaceAllString(content, "")
+	
+	// Trim whitespace
+	return regexp.MustCompile(`^\s+|\s+$`).ReplaceAllString(cleaned, "")
 }
