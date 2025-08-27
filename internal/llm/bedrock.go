@@ -8,14 +8,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
 
 	"personal-assistant/internal/domain"
 	"personal-assistant/internal/log"
 )
 
 type BedrockProvider struct {
-	client     *bedrockruntime.Client
+	client     *bedrock.Client
 	config     *domain.LLMProviderConfig
 	logger     *log.Logger
 	chatModel  string
@@ -35,7 +36,7 @@ func NewBedrockProvider(config *domain.LLMProviderConfig, logger *log.Logger) (*
 		Credentials: credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 	}
 
-	client := bedrockruntime.NewFromConfig(cfg)
+	client := bedrock.NewFromConfig(cfg)
 
 	chatModel := config.ModelChat
 	if chatModel == "" {
@@ -61,20 +62,27 @@ func (p *BedrockProvider) Name() string {
 }
 
 func (p *BedrockProvider) Chat(ctx context.Context, req *domain.ChatCompletionRequest) (*domain.ChatCompletionResponse, error) {
-	body, err := p.buildBedrockRequest(req)
-	if err != nil {
-		return nil, err
-	}
+	system, messages := p.buildConverseRequest(req)
 
-	result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
+	input := &bedrock.ConverseInput{
 		ModelId: aws.String(p.chatModel),
-		Body:    body,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("bedrock invoke failed: %w", err)
+		Messages: messages,
+		InferenceConfig: &types.InferenceConfiguration{
+			MaxTokens:   aws.Int32(int32(req.MaxTokens)),
+			Temperature: aws.Float32(req.Temperature),
+		},
 	}
 
-	return p.parseBedrockResponse(result.Body)
+	if len(system) > 0 {
+		input.System = system
+	}
+
+	result, err := p.client.Converse(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("bedrock converse failed: %w", err)
+	}
+
+	return p.parseConverseResponse(result)
 }
 
 func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
@@ -83,10 +91,9 @@ func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float3
 	for _, text := range texts {
 		body, _ := json.Marshal(map[string]string{"inputText": text})
 
-		result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-			ModelId:     aws.String(p.embedModel),
-			Body:        body,
-			ContentType: aws.String("application/json"),
+		result, err := p.client.InvokeModel(ctx, &bedrock.InvokeModelInput{
+			ModelId: aws.String(p.embedModel),
+			Body:    body,
 		})
 		if err != nil {
 			return nil, err
@@ -102,48 +109,52 @@ func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float3
 	return embeddings, nil
 }
 
-func (p *BedrockProvider) buildBedrockRequest(req *domain.ChatCompletionRequest) ([]byte, error) {
-	messages := []map[string]string{}
+func (p *BedrockProvider) buildConverseRequest(req *domain.ChatCompletionRequest) ([]types.SystemContentBlock, []types.Message) {
+	var system []types.SystemContentBlock
+	var messages []types.Message
 
 	for _, msg := range req.Messages {
-		messages = append(messages, map[string]string{
-			"role":    msg.Role,
-			"content": msg.Content,
-		})
+		if msg.Role == "system" {
+			system = append(system, &types.SystemContentBlockMemberText{
+				Value: msg.Content,
+			})
+		} else {
+			role := types.ConversationRoleUser
+			if msg.Role == "assistant" {
+				role = types.ConversationRoleAssistant
+			}
+
+			messages = append(messages, types.Message{
+				Role: role,
+				Content: []types.ContentBlock{
+					&types.ContentBlockMemberText{
+						Value: msg.Content,
+					},
+				},
+			})
+		}
 	}
 
-	body := map[string]interface{}{
-		"model":                 p.chatModel,
-		"messages":              messages,
-		"max_completion_tokens": req.MaxTokens,
-		"temperature":           req.Temperature,
-		"stream":                false,
-	}
-
-	return json.Marshal(body)
+	return system, messages
 }
 
-func (p *BedrockProvider) parseBedrockResponse(body []byte) (*domain.ChatCompletionResponse, error) {
-	var resp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-			TotalTokens      int `json:"total_tokens"`
-		} `json:"usage"`
-	}
-
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-
+func (p *BedrockProvider) parseConverseResponse(result *bedrock.ConverseOutput) (*domain.ChatCompletionResponse, error) {
 	content := ""
-	if len(resp.Choices) > 0 {
-		content = resp.Choices[0].Message.Content
+	if result.Output != nil {
+		if msg := result.Output.(*types.ConverseOutputMemberMessage); msg != nil {
+			if len(msg.Value.Content) > 0 {
+				if textBlock := msg.Value.Content[0].(*types.ContentBlockMemberText); textBlock != nil {
+					content = textBlock.Value
+				}
+			}
+		}
+	}
+
+	usage := &domain.TokenUsage{}
+	if result.Usage != nil {
+		usage.PromptTokens = int(aws.ToInt32(result.Usage.InputTokens))
+		usage.CompletionTokens = int(aws.ToInt32(result.Usage.OutputTokens))
+		usage.TotalTokens = int(aws.ToInt32(result.Usage.TotalTokens))
 	}
 
 	return &domain.ChatCompletionResponse{
@@ -153,10 +164,6 @@ func (p *BedrockProvider) parseBedrockResponse(body []byte) (*domain.ChatComplet
 				Content: content,
 			},
 		}},
-		Usage: &domain.TokenUsage{
-			PromptTokens:     resp.Usage.PromptTokens,
-			CompletionTokens: resp.Usage.CompletionTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-		},
+		Usage: usage,
 	}, nil
 }
