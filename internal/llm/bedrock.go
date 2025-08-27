@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -123,6 +124,11 @@ func (p *BedrockProvider) buildBedrockRequest(req *domain.ChatCompletionRequest)
 	return json.Marshal(body)
 }
 
+func (p *BedrockProvider) stripReasoningTags(content string) string {
+	re := regexp.MustCompile(`<reasoning>.*?</reasoning>`)
+	return re.ReplaceAllString(content, "")
+}
+
 func (p *BedrockProvider) parseBedrockResponse(body []byte) (*domain.ChatCompletionResponse, error) {
 	var resp struct {
 		Choices []struct {
@@ -143,7 +149,7 @@ func (p *BedrockProvider) parseBedrockResponse(body []byte) (*domain.ChatComplet
 
 	content := ""
 	if len(resp.Choices) > 0 {
-		content = resp.Choices[0].Message.Content
+		content = p.stripReasoningTags(resp.Choices[0].Message.Content)
 	}
 
 	return &domain.ChatCompletionResponse{
