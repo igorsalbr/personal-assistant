@@ -61,21 +61,20 @@ func (p *BedrockProvider) Name() string {
 }
 
 func (p *BedrockProvider) Chat(ctx context.Context, req *domain.ChatCompletionRequest) (*domain.ChatCompletionResponse, error) {
-	body, err := p.buildClaudeRequest(req)
+	body, err := p.buildBedrockRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
 	result, err := p.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-		ModelId:     aws.String(p.chatModel),
-		Body:        body,
-		ContentType: aws.String("application/json"),
+		ModelId: aws.String(p.chatModel),
+		Body:    body,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("bedrock invoke failed: %w", err)
 	}
 
-	return p.parseClaudeResponse(result.Body)
+	return p.parseBedrockResponse(result.Body)
 }
 
 func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
@@ -103,42 +102,38 @@ func (p *BedrockProvider) Embed(ctx context.Context, texts []string) ([][]float3
 	return embeddings, nil
 }
 
-func (p *BedrockProvider) buildClaudeRequest(req *domain.ChatCompletionRequest) ([]byte, error) {
+func (p *BedrockProvider) buildBedrockRequest(req *domain.ChatCompletionRequest) ([]byte, error) {
 	messages := []map[string]string{}
-	var system string
 
 	for _, msg := range req.Messages {
-		if msg.Role == "system" {
-			system = msg.Content
-		} else {
-			messages = append(messages, map[string]string{
-				"role":    msg.Role,
-				"content": msg.Content,
-			})
-		}
+		messages = append(messages, map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		})
 	}
 
 	body := map[string]interface{}{
-		"messages":          messages,
-		"max_tokens":        req.MaxTokens,
-		"anthropic_version": "bedrock-2023-05-31",
-	}
-
-	if system != "" {
-		body["system"] = system
+		"model":                 p.chatModel,
+		"messages":              messages,
+		"max_completion_tokens": req.MaxTokens,
+		"temperature":           req.Temperature,
+		"stream":                false,
 	}
 
 	return json.Marshal(body)
 }
 
-func (p *BedrockProvider) parseClaudeResponse(body []byte) (*domain.ChatCompletionResponse, error) {
+func (p *BedrockProvider) parseBedrockResponse(body []byte) (*domain.ChatCompletionResponse, error) {
 	var resp struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
 		} `json:"usage"`
 	}
 
@@ -147,8 +142,8 @@ func (p *BedrockProvider) parseClaudeResponse(body []byte) (*domain.ChatCompleti
 	}
 
 	content := ""
-	if len(resp.Content) > 0 {
-		content = resp.Content[0].Text
+	if len(resp.Choices) > 0 {
+		content = resp.Choices[0].Message.Content
 	}
 
 	return &domain.ChatCompletionResponse{
@@ -159,9 +154,9 @@ func (p *BedrockProvider) parseClaudeResponse(body []byte) (*domain.ChatCompleti
 			},
 		}},
 		Usage: &domain.TokenUsage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
 		},
 	}, nil
 }
